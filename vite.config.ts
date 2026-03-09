@@ -4,44 +4,43 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     base: './',
-    plugins: [
-      react(), 
-      tailwindcss(),
-      /*
-      VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
-        manifest: {
-          name: 'AI Novelist',
-          short_name: 'AINovelist',
-          description: 'Create amazing stories with AI',
-          theme_color: '#000000',
-          icons: [
-            {
-              src: 'https://picsum.photos/192/192',
-              sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'https://picsum.photos/512/512',
-              sizes: '512x512',
-              type: 'image/png'
-            },
-            {
-              src: 'https://picsum.photos/512/512',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
-            }
-          ]
-        }
-      })
-      */
-    ],
+    plugins: [react(), tailwindcss()
+    /*
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      manifest: {
+        name: 'AI Novelist',
+        short_name: 'AINovelist',
+        description: 'Create amazing stories with AI',
+        theme_color: '#000000',
+        icons: [
+          {
+            src: 'https://picsum.photos/192/192',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'https://picsum.photos/512/512',
+            sizes: '512x512',
+            type: 'image/png'
+          },
+          {
+            src: 'https://picsum.photos/512/512',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ]
+      }
+    })
+    */, cloudflare()],
     define: {
       'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
       'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL || ''),
