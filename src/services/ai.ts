@@ -95,22 +95,32 @@ async function callAI(
         
         const decoder = new TextDecoder();
         let fullText = '';
+        let buffer = '';
         
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || '';
           
           for (const line of lines) {
             if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
               try {
                 const data = JSON.parse(line.slice(6));
+                if (data.error) {
+                  throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+                }
                 if (data.choices?.[0]?.delta?.content) {
                   fullText += data.choices[0].delta.content;
                 }
-              } catch (e) {
+              } catch (e: any) {
+                if (e.message && !e.message.includes('Unexpected') && !e.message.includes('JSON')) {
+                  throw e; // Re-throw actual API errors
+                }
                 // Ignore parse errors for incomplete chunks
               }
             }
@@ -168,22 +178,33 @@ async function callAI(
         
         const decoder = new TextDecoder();
         let fullText = '';
+        let buffer = '';
         
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || '';
           
           for (const line of lines) {
             if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
               try {
                 const data = JSON.parse(line.slice(6));
+                if (data.error) {
+                  throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+                }
                 if (data.choices?.[0]?.delta?.content) {
                   fullText += data.choices[0].delta.content;
                 }
-              } catch (e) {}
+              } catch (e: any) {
+                if (e.message && !e.message.includes('Unexpected') && !e.message.includes('JSON')) {
+                  throw e; // Re-throw actual API errors
+                }
+              }
             }
           }
         }
@@ -245,22 +266,33 @@ async function callAI(
         
         const decoder = new TextDecoder();
         let fullText = '';
+        let buffer = '';
         
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || '';
           
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                if (data.error) {
+                  throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+                }
                 if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
                   fullText += data.candidates[0].content.parts[0].text;
                 }
-              } catch (e) {}
+              } catch (e: any) {
+                if (e.message && !e.message.includes('Unexpected') && !e.message.includes('JSON')) {
+                  throw e; // Re-throw actual API errors
+                }
+              }
             }
           }
         }

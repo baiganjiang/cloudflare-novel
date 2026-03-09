@@ -17,35 +17,71 @@ export default {
     if (url.pathname === '/api/chat' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { url: apiUrl, key, model, messages, temperature, stream } = body;
+        const { url: apiUrl, key, model, messages, temperature } = body;
 
         let fetchUrl = apiUrl.trim();
         if (!fetchUrl.endsWith('/chat/completions') && !fetchUrl.endsWith('/completions')) {
           fetchUrl = fetchUrl.replace(/\/+$/, '') + '/chat/completions';
         }
 
-        const response = await fetch(fetchUrl, {
-          method: 'POST',
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // Send a keep-alive comment every 15 seconds to prevent Cloudflare's 100s timeout
+        const keepAliveInterval = setInterval(() => {
+          writer.write(encoder.encode(': keep-alive\n\n'));
+        }, 15000);
+
+        // Process fetch asynchronously
+        (async () => {
+          try {
+            const response = await fetch(fetchUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`
+              },
+              body: JSON.stringify({
+                model,
+                messages,
+                temperature,
+                stream: true // Force streaming
+              })
+            });
+
+            clearInterval(keepAliveInterval);
+
+            if (!response.ok) {
+              const errText = await response.text();
+              writer.write(encoder.encode(`data: {"error": ${JSON.stringify(errText)}}\n\n`));
+              writer.close();
+              return;
+            }
+
+            if (response.body) {
+              const reader = response.body.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                await writer.write(value);
+              }
+            }
+            writer.close();
+          } catch (err: any) {
+            clearInterval(keepAliveInterval);
+            writer.write(encoder.encode(`data: {"error": ${JSON.stringify(err.message)}}\n\n`));
+            writer.close();
+          }
+        })();
+
+        return new Response(readable, {
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${key}`
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature,
-            stream
-          })
-        });
-
-        // Proxy the response directly (supports streaming)
-        const newHeaders = new Headers(response.headers);
-        newHeaders.set('Access-Control-Allow-Origin', '*');
-
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: newHeaders
+            'Content-Type': 'text/event-stream',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          }
         });
       } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), {
@@ -59,31 +95,66 @@ export default {
     if (url.pathname === '/api/chat/gemini' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { model, contents, config, stream } = body;
+        const { model, contents, config } = body;
         const apiKey = env.GEMINI_API_KEY || body.key || '';
         
-        const action = stream ? 'streamGenerateContent?alt=sse' : 'generateContent';
+        const action = 'streamGenerateContent?alt=sse';
         const fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${apiKey}`;
 
-        const response = await fetch(fetchUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: contents }] }],
-            generationConfig: {
-              temperature: config?.temperature,
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        // Send a keep-alive comment every 15 seconds to prevent Cloudflare's 100s timeout
+        const keepAliveInterval = setInterval(() => {
+          writer.write(encoder.encode(': keep-alive\n\n'));
+        }, 15000);
+
+        (async () => {
+          try {
+            const response = await fetch(fetchUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: contents }] }],
+                generationConfig: {
+                  temperature: config?.temperature,
+                }
+              })
+            });
+
+            clearInterval(keepAliveInterval);
+
+            if (!response.ok) {
+              const errText = await response.text();
+              writer.write(encoder.encode(`data: {"error": ${JSON.stringify(errText)}}\n\n`));
+              writer.close();
+              return;
             }
-          })
-        });
 
-        // Proxy the response directly (supports streaming)
-        const newHeaders = new Headers(response.headers);
-        newHeaders.set('Access-Control-Allow-Origin', '*');
+            if (response.body) {
+              const reader = response.body.getReader();
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                await writer.write(value);
+              }
+            }
+            writer.close();
+          } catch (err: any) {
+            clearInterval(keepAliveInterval);
+            writer.write(encoder.encode(`data: {"error": ${JSON.stringify(err.message)}}\n\n`));
+            writer.close();
+          }
+        })();
 
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: newHeaders
+        return new Response(readable, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          }
         });
       } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), {
