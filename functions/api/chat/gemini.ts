@@ -1,3 +1,13 @@
+export const onRequestOptions = async () => {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    }
+  });
+};
+
 export const onRequestPost = async (context) => {
   const { request, env } = context;
   
@@ -28,12 +38,18 @@ export const onRequestPost = async (context) => {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "AI 没有返回内容。";
     
     return new Response(JSON.stringify({ text }), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      }
     });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      }
     });
   }
 };
