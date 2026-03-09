@@ -1,0 +1,6 @@
+name = "cloudflare-novel"
+main = "worker.ts"
+compatibility_date = "2024-03-20"
+
+[assets]
+directory = "dist"
