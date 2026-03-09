@@ -25,9 +25,8 @@ const getEnv = (key: string): string => {
 
 // Use proxy in web browser environments (including local dev and preview) to avoid CORS
 // Native apps (Capacitor) use native HTTP which bypasses CORS
-// NOTE: We disable proxy by default now because Cloudflare has a strict 100s timeout.
-// Most modern AI APIs (Gemini, OpenAI, NVIDIA) support CORS directly from the browser.
-const useProxy = false; // Changed from: isBrowser && !isNative;
+// NOTE: We use proxy by default again, but with streaming enabled to avoid Cloudflare's 100s timeout.
+const useProxy = isBrowser && !isNative;
 
 async function callAI(
   systemInstruction: string,
@@ -74,24 +73,51 @@ async function callAI(
             model: profile.model,
             messages,
             temperature: profile.temperature,
+            stream: true // Enable streaming to avoid 100s timeout
           })
         });
+        
         if (!response.ok) {
           const errText = await response.text();
           console.error(`[AI Service] Proxy Error Response:`, errText);
           throw new Error(`API 错误: ${response.status} - ${errText}`);
         }
         
-        let data;
-        const responseText = await response.text();
-        try {
-          data = JSON.parse(responseText);
-        } catch (e) {
-          console.error(`[AI Service] Failed to parse proxy response as JSON. Response text:`, responseText);
-          throw new Error(`代理服务器返回了无效的数据 (非 JSON 格式)。内容: ${responseText.substring(0, 100)}...`);
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.choices?.[0]?.message?.content || "AI 没有返回内容";
         }
         
-        return data.choices?.[0]?.message?.content || "AI 没有返回内容";
+        // Handle SSE stream
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
+        
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.choices?.[0]?.delta?.content) {
+                  fullText += data.choices[0].delta.content;
+                }
+              } catch (e) {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+        }
+        
+        return fullText || "AI 没有返回内容";
       } else if (isNative) {
         // Mobile Native: Use CapacitorHttp to bypass CORS
         const response = await CapacitorHttp.post({
@@ -122,14 +148,47 @@ async function callAI(
             model: profile.model,
             messages,
             temperature: profile.temperature,
+            stream: true // Use streaming here too for consistency
           })
         });
+        
         if (!response.ok) {
           const errText = await response.text();
           throw new Error(`API 错误: ${response.status} - ${errText}`);
         }
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content || "AI 没有返回内容";
+        
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.choices?.[0]?.message?.content || "AI 没有返回内容";
+        }
+        
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
+        
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.choices?.[0]?.delta?.content) {
+                  fullText += data.choices[0].delta.content;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+        
+        return fullText || "AI 没有返回内容";
       }
     } catch (error: any) {
       throw new Error(`请求失败: ${error.message}。请检查网络或 API 地址是否正确。`);
@@ -163,25 +222,50 @@ async function callAI(
             config: {
               systemInstruction,
               temperature: profile.temperature,
-            }
+            },
+            stream: true // Request streaming
           })
         });
+        
         if (!response.ok) {
           const errData = await response.json().catch(() => ({ error: '无法解析错误响应' }));
           console.error(`[AI Service] Gemini Proxy Error:`, errData);
-          throw new Error(`Gemini 服务器错误: ${response.status} - ${errData.error || '未知错误'}`);
+          throw new Error(`Gemini 服务器错误: ${response.status} - ${errData.error?.message || errData.error || '未知错误'}`);
         }
         
-        let data;
-        const responseText = await response.text();
-        try {
-          data = JSON.parse(responseText);
-        } catch (e) {
-          console.error(`[AI Service] Failed to parse Gemini proxy response as JSON. Response text:`, responseText);
-          throw new Error(`代理服务器返回了无效的数据 (非 JSON 格式)。内容: ${responseText.substring(0, 100)}...`);
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.candidates?.[0]?.content?.parts?.[0]?.text || "AI 没有返回内容。";
         }
         
-        return data.text || "AI 没有返回内容。";
+        // Handle Gemini SSE stream
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
+        
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                  fullText += data.candidates[0].content.parts[0].text;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+        
+        return fullText || "AI 没有返回内容。";
       } else {
         // Mobile Native or Direct: Use SDK
         const ai = new GoogleGenAI({ apiKey });
