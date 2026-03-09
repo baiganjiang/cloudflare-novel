@@ -25,7 +25,9 @@ const getEnv = (key: string): string => {
 
 // Use proxy in web browser environments (including local dev and preview) to avoid CORS
 // Native apps (Capacitor) use native HTTP which bypasses CORS
-const useProxy = isBrowser && !isNative;
+// NOTE: We disable proxy by default now because Cloudflare has a strict 100s timeout.
+// Most modern AI APIs (Gemini, OpenAI, NVIDIA) support CORS directly from the browser.
+const useProxy = false; // Changed from: isBrowser && !isNative;
 
 async function callAI(
   systemInstruction: string,
